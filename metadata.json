@@ -1,0 +1,5 @@
+{
+  "name": "Speed of Sound vs Light Simulator",
+  "description": "A simulator to visualize and hear the delay between seeing an event and hearing it based on distance.",
+  "requestFramePermissions": []
+}
