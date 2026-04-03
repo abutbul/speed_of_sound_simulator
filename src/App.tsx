@@ -17,6 +17,8 @@ interface ThemeConfig {
   text: string;
   icon: any;
   description: string;
+  tempRange: { min: number; max: number; default: number };
+  absorptionCoeff: number; // dB per meter
 }
 
 const THEMES: Record<Environment, ThemeConfig> = {
@@ -27,7 +29,9 @@ const THEMES: Record<Environment, ThemeConfig> = {
     accent: 'text-yellow-400',
     text: 'text-sky-100',
     icon: Sun,
-    description: 'Standard atmospheric conditions on a clear day.'
+    description: 'Standard atmospheric conditions on a clear day.',
+    tempRange: { min: -50, max: 50, default: 20 },
+    absorptionCoeff: 0.005 // dB/m
   },
   rainy: {
     name: 'Rainy Earth',
@@ -36,7 +40,9 @@ const THEMES: Record<Environment, ThemeConfig> = {
     accent: 'text-blue-400',
     text: 'text-slate-100',
     icon: CloudRain,
-    description: 'Humid air slightly affects sound propagation.'
+    description: 'Humid air slightly affects sound propagation.',
+    tempRange: { min: -50, max: 50, default: 20 },
+    absorptionCoeff: 0.008 // Higher due to humidity
   },
   stormy: {
     name: 'Stormy Earth',
@@ -45,7 +51,9 @@ const THEMES: Record<Environment, ThemeConfig> = {
     accent: 'text-purple-400',
     text: 'text-indigo-100',
     icon: CloudLightning,
-    description: 'Lightning strikes! Hear the thunder roll.'
+    description: 'Lightning strikes! Hear the thunder roll.',
+    tempRange: { min: -50, max: 50, default: 20 },
+    absorptionCoeff: 0.01 // Higher due to moisture and turbulence
   },
   mars: {
     name: 'Mars Surface',
@@ -54,7 +62,9 @@ const THEMES: Record<Environment, ThemeConfig> = {
     accent: 'text-red-500',
     text: 'text-orange-100',
     icon: Rocket,
-    description: 'Thin CO2 atmosphere. Sound travels much slower here.'
+    description: 'Thin CO2 atmosphere. Sound travels much slower here.',
+    tempRange: { min: -80, max: 0, default: -60 },
+    absorptionCoeff: 0.02 // CO2 absorbs more than air
   },
   underwater: {
     name: 'Ocean Depths',
@@ -63,7 +73,9 @@ const THEMES: Record<Environment, ThemeConfig> = {
     accent: 'text-cyan-400',
     text: 'text-cyan-100',
     icon: Waves,
-    description: 'Water is dense. Sound travels ~4.3x faster than in air.'
+    description: 'Water is dense. Sound travels ~4.3x faster than in air.',
+    tempRange: { min: 0, max: 30, default: 10 },
+    absorptionCoeff: 0.0005 // Water absorbs less than air
   },
   venus: {
     name: 'Venus Surface',
@@ -72,7 +84,9 @@ const THEMES: Record<Environment, ThemeConfig> = {
     accent: 'text-orange-400',
     text: 'text-yellow-100',
     icon: Sun,
-    description: 'Super-critical CO2. Thick atmosphere makes sound travel at ~410 m/s.'
+    description: 'Super-critical CO2. Thick atmosphere makes sound travel at ~410 m/s.',
+    tempRange: { min: 400, max: 500, default: 450 },
+    absorptionCoeff: 0.1 // Dense CO2 atmosphere, high absorption
   },
   diamond: {
     name: 'Diamond Planet',
@@ -81,7 +95,9 @@ const THEMES: Record<Environment, ThemeConfig> = {
     accent: 'text-emerald-300',
     text: 'text-emerald-50',
     icon: Gem,
-    description: 'Solid diamond. Sound travels at a staggering 18,000 m/s!'
+    description: 'Solid diamond. Sound travels at a staggering 18,000 m/s!',
+    tempRange: { min: 0, max: 100, default: 20 },
+    absorptionCoeff: 0.0001 // Diamond has very low acoustic absorption
   },
   space: {
     name: 'Deep Space',
@@ -90,7 +106,9 @@ const THEMES: Record<Environment, ThemeConfig> = {
     accent: 'text-zinc-500',
     text: 'text-zinc-100',
     icon: Ghost,
-    description: 'A vacuum. In space, no one can hear you scream.'
+    description: 'A vacuum. In space, no one can hear you scream.',
+    tempRange: { min: 0, max: 0, default: 0 },
+    absorptionCoeff: 0 // No medium, no absorption
   }
 };
 
@@ -311,6 +329,8 @@ export default function App() {
   const [temp, setTemp] = useState<number>(20); // Celsius
   const [distance, setDistance] = useState<number>(1000); // meters
   const [sample, setSample] = useState<SoundSample>('bell');
+  const [initialDb, setInitialDb] = useState<number>(100); // Initial sound level in dB
+  const [decayEnabled, setDecayEnabled] = useState<boolean>(false); // Enable absorption decay
   
   const [isRunning, setIsRunning] = useState(false);
   const [elapsedTime, setElapsedTime] = useState(0);
@@ -323,7 +343,7 @@ export default function App() {
   // Calculate speed of sound based on environment and temperature
   const speedOfSound = useMemo(() => {
     switch (env) {
-      case 'underwater': return 1480;
+      case 'underwater': return 1400 + 4 * temp; // Approximate formula for seawater
       case 'mars': return 240;
       case 'venus': return 410;
       case 'diamond': return 18000;
@@ -337,6 +357,13 @@ export default function App() {
   const targetTime = distance / speedOfSound;
   const theme = THEMES[env];
 
+  // Calculate received dB level accounting for absorption
+  const receivedDb = useMemo(() => {
+    if (!decayEnabled || env === 'space') return initialDb;
+    const absorptionLoss = theme.absorptionCoeff * distance;
+    return Math.max(0, initialDb - absorptionLoss);
+  }, [decayEnabled, env, initialDb, theme.absorptionCoeff, distance]);
+
   // Auto-select sample based on weather
   useEffect(() => {
     if (env === 'stormy' || env === 'rainy') {
@@ -347,6 +374,11 @@ export default function App() {
       setSample('bell');
     }
   }, [env]);
+
+  // Update temperature to environment default when switching environments
+  useEffect(() => {
+    setTemp(theme.tempRange.default);
+  }, [env, theme.tempRange.default]);
 
   const playSound = useCallback(() => {
     if (env === 'space') return;
@@ -547,8 +579,8 @@ export default function App() {
               </div>
             </div>
 
-            {/* Distance & Temp */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            {/* Distance, Temp & Sound Level */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
               <div className="space-y-4">
                 <div className="flex justify-between items-end">
                   <label className="text-[10px] font-bold uppercase tracking-[0.2em] opacity-50 flex items-center gap-2">
@@ -576,11 +608,43 @@ export default function App() {
                   </span>
                 </div>
                 <input
-                  type="range" min="-50" max="50" step="1"
+                  type="range" min={theme.tempRange.min} max={theme.tempRange.max} step="1"
                   value={temp} onChange={(e) => setTemp(Number(e.target.value))}
-                  disabled={isRunning || env === 'underwater' || env === 'space'}
+                  disabled={isRunning || env === 'space'}
                   className="w-full h-1.5 bg-white/10 rounded-full appearance-none cursor-pointer accent-white disabled:opacity-20"
                 />
+              </div>
+
+              <div className="space-y-4">
+                <div className="flex justify-between items-end">
+                  <label className="text-[10px] font-bold uppercase tracking-[0.2em] opacity-50 flex items-center gap-2">
+                    <Volume2 size={14} /> Sound Level
+                  </label>
+                  <span className={`text-2xl font-mono font-black ${theme.accent}`}>
+                    {decayEnabled ? receivedDb.toFixed(1) : initialDb} <span className="text-xs opacity-50">dB</span>
+                  </span>
+                </div>
+                <input
+                  type="range" min="60" max="140" step="1"
+                  value={initialDb} onChange={(e) => setInitialDb(Number(e.target.value))}
+                  disabled={isRunning}
+                  className="w-full h-1.5 bg-white/10 rounded-full appearance-none cursor-pointer accent-white"
+                />
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-bold uppercase tracking-[0.2em] opacity-50">
+                    Absorption Decay
+                  </label>
+                  <button
+                    onClick={() => setDecayEnabled(!decayEnabled)}
+                    className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${
+                      decayEnabled 
+                        ? `bg-white text-black` 
+                        : `bg-white/10 text-white hover:bg-white/20`
+                    }`}
+                  >
+                    {decayEnabled ? 'ON' : 'OFF'}
+                  </button>
+                </div>
               </div>
             </div>
 
